@@ -124,7 +124,7 @@ class VideoStreamServer:
 
 
 if __name__ == "__main__":
-    video_sources = [("samples/video1.mov", 4001), ("samples/video2.mov", 4002),("samples/video3.mp4", 4003),("samples/video4.mp4", 4004)]
+    video_sources = [("samples/video1.mp4", 4001), ("samples/video2.mp4", 4002),("samples/video3.mp4", 4003),("samples/video4.mp4", 4004)]
 
     servers = []
     threads = []
