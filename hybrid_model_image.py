@@ -1,5 +1,7 @@
 import torch
 import cv2
+import glob
+import os
 import numpy as np
 from ultralytics import YOLO
 from torchvision.models.detection import fasterrcnn_resnet50_fpn
@@ -7,8 +9,14 @@ import random
 
 # Load YOLOv11 and Faster R-CNN models
 yolo_model = YOLO("models/yolo11x-seg.pt")  # Adjust path to your YOLOv11Seg model
-faster_rcnn_model = fasterrcnn_resnet50_fpn(weights="FasterRCNN_ResNet50_FPN_Weights.DEFAULT")
+faster_rcnn_model = fasterrcnn_resnet50_fpn(
+    weights="FasterRCNN_ResNet50_FPN_Weights.DEFAULT"
+)
 faster_rcnn_model.eval()
+image_dir = "C:\\Projects\\Smart-Campus-Manager\\images"
+
+image_paths = glob.glob(os.path.join(image_dir,"*"))  # Adjust extension if needed
+
 
 # YOLOv11 class names (keep only relevant ones for this example)
 yolo_classes = {
@@ -17,10 +25,36 @@ yolo_classes = {
     2: "car",
     3: "motorcycle",
     5: "bus",
-    6: "train",
-    7: "truck"
+    7: "truck",
+    15: "cat",
+    16: "dog",
+    17: "horse",
+    18: "sheep",
+    19: "cow",
+    20: "elephant",
+    21: "bear",
+    22: "zebra",
+    23: "giraffe",
 }
-selected_classes = {0, 1, 2, 3, 5, 6, 7}  # Only person and vehicle classes
+selected_classes = {
+    0,
+    1,
+    2,
+    3,
+    5,
+    6,
+    7,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+}  # Only person and vehicle classes
+
 
 # Function to run YOLOv11 detection and filter selected classes
 def yolo_detection(image):
@@ -28,7 +62,7 @@ def yolo_detection(image):
     results[0].show()
     if isinstance(results, list) and len(results) > 0:
         results = results[0]
-        
+
     if hasattr(results, "boxes"):
         bboxes = results.boxes.xyxy.cpu().numpy()
         labels = results.boxes.cls.cpu().numpy()
@@ -42,15 +76,20 @@ def yolo_detection(image):
                 filtered_labels.append(label)
                 filtered_scores.append(score)
 
-        return np.array(filtered_bboxes), np.array(filtered_labels), np.array(filtered_scores)
+        return (
+            np.array(filtered_bboxes),
+            np.array(filtered_labels),
+            np.array(filtered_scores),
+        )
     else:
         raise ValueError("Unexpected results format")
+
 
 # Function to refine detections using Faster R-CNN
 def faster_rcnn_refinement(image, bboxes):
     refined_detections = []
     for bbox in bboxes:
-        roi = image[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
+        roi = image[int(bbox[1]) : int(bbox[3]), int(bbox[0]) : int(bbox[2])]
         roi_tensor = torch.from_numpy(roi).float().permute(2, 0, 1).unsqueeze(0) / 255.0
 
         # Get the outputs from Faster R-CNN
@@ -63,27 +102,41 @@ def faster_rcnn_refinement(image, bboxes):
 
     return refined_detections
 
+
 def merge_detections(yolo_results, refined_detections, iou_threshold=0.5):
     final_detections = []
 
     for yolo_box, yolo_label, yolo_score in zip(*yolo_results):
         best_iou = 0  # Initialize the best IoU score as 0
-        best_refined_detection = None  # Initialize the variable to store the best matching refined detection
+        best_refined_detection = (
+            None  # Initialize the variable to store the best matching refined detection
+        )
 
         # Compare the current YOLO detection with each refined detection from Faster R-CNN
         for refined_box, refined_label, refined_score in refined_detections:
-            iou = calculate_iou(yolo_box, refined_box)  # Calculate IoU between YOLO and refined box
+            iou = calculate_iou(
+                yolo_box, refined_box
+            )  # Calculate IoU between YOLO and refined box
             if iou > iou_threshold and refined_score > yolo_score:
                 if iou > best_iou:  # If the IoU is better than the previous best IoU
                     best_iou = iou  # Update the best IoU
-                    best_refined_detection = (refined_box, refined_label, refined_score)  # Update best refined detection
+                    best_refined_detection = (
+                        refined_box,
+                        refined_label,
+                        refined_score,
+                    )  # Update best refined detection
 
         if best_refined_detection:
-            final_detections.append(best_refined_detection)  # If a better refined detection exists, use it
+            final_detections.append(
+                best_refined_detection
+            )  # If a better refined detection exists, use it
         else:
-            final_detections.append((yolo_box, yolo_label, yolo_score))  # Otherwise, use the original YOLO detection
+            final_detections.append(
+                (yolo_box, yolo_label, yolo_score)
+            )  # Otherwise, use the original YOLO detection
 
     return final_detections
+
 
 # Function to calculate IoU (Intersection over Union)
 def calculate_iou(box1, box2):
@@ -98,6 +151,7 @@ def calculate_iou(box1, box2):
 
     iou = interArea / float(box1Area + box2Area - interArea)
     return iou
+
 
 # Hybrid detection pipeline
 def hybrid_detection(image):
@@ -116,6 +170,7 @@ def hybrid_detection(image):
 
     return final_results, class_counts
 
+
 # Process image and save the result
 def process_image(image_path):
     # Load the image here
@@ -127,7 +182,7 @@ def process_image(image_path):
     draw_boxes(image, final_results, yolo_classes=yolo_classes)
 
     # Save and show results
-    result_path = "results/hybrid_detection.jpg"
+    result_path = f"results/{os.path.basename(image_path)}.jpg"
     cv2.imwrite(result_path, image)
     cv2.imshow("Final Result", image)
     cv2.waitKey(0)
@@ -144,24 +199,42 @@ def process_image(image_path):
 # Function to draw bounding boxes and labels with scores on the image
 def draw_boxes(image, detections, yolo_classes=None):
     # Generate unique colors for each class
-    colors = {class_id: (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-              for class_id in yolo_classes.keys()}
+    colors = {
+        class_id: (
+            random.randint(0, 255),
+            random.randint(0, 255),
+            random.randint(0, 255),
+        )
+        for class_id in yolo_classes.keys()
+    }
 
     for bbox, label, score in detections:
         # Convert bounding box coordinates to integers
         x1, y1, x2, y2 = map(int, bbox)
 
         # Use the class ID to assign a color
-        color = colors.get(int(label), (0, 255, 0))  # Default to green if no color is assigned
+        color = colors.get(
+            int(label), (0, 255, 0)
+        )  # Default to green if no color is assigned
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 0.7
         font_thickness = 2
         box_thickness = 3  # Thicker bounding box for better visibility
 
         # Draw a filled rectangle for text background for better visibility
-        text_label = f"{yolo_classes.get(int(label), f'Class {int(label)})')}: {score:.2f}"
-        (text_width, text_height), baseline = cv2.getTextSize(text_label, font, font_scale, font_thickness)
-        cv2.rectangle(image, (x1, y1 - text_height - baseline), (x1 + text_width, y1), color, thickness=cv2.FILLED)
+        text_label = (
+            f"{yolo_classes.get(int(label), f'Class {int(label)})')}: {score:.2f}"
+        )
+        (text_width, text_height), baseline = cv2.getTextSize(
+            text_label, font, font_scale, font_thickness
+        )
+        cv2.rectangle(
+            image,
+            (x1, y1 - text_height - baseline),
+            (x1 + text_width, y1),
+            color,
+            thickness=cv2.FILLED,
+        )
 
         # Draw the bounding box with thicker edges and slight transparency
         cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness=box_thickness)
@@ -175,9 +248,9 @@ def draw_boxes(image, detections, yolo_classes=None):
             font,
             font_scale,
             (0, 0, 0),  # Shadow color (black)
-            font_thickness + 1
+            font_thickness + 1,
         )
-        
+
         # Put the label text on top
         cv2.putText(
             image,
@@ -186,9 +259,14 @@ def draw_boxes(image, detections, yolo_classes=None):
             font,
             font_scale,
             (255, 255, 255),  # White text color for better contrast
-            font_thickness
+            font_thickness,
         )
-# Example usage
-image_path = "images/people1.jpg"
-process_image(image_path)
 
+
+# Example usage
+image_path = "images/RobBrandford_ExecutiveDirector-scaled.jpg"
+# for image_path in image_paths:
+    # Read image
+print(image_path)
+# img = cv2.imread(image_path)
+process_image(image_path)
